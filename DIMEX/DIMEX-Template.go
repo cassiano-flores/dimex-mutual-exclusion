@@ -9,13 +9,11 @@
 	  semantica de concorrencia: cada evento eh atomico, modulo trata 1 por vez
 
 	QUESTAO:
-	  Alem de obviamente entender a estrutura...
-	  Implementar o nucleo do algoritmo ja descrito, ou seja, o corpo das
-	  funcoes reativas a cada entrada possivel:
-	   		handleUponReqEntry()                // recebe do nivel de cima (app)
-				handleUponReqExit()                 // recebe do nivel de cima (app)
-				handleUponDeliverRespOk(msgOutro)   // recebe do nivel de baixo
-				handleUponDeliverReqEntry(msgOutro) // recebe do nivel de baixo
+	  Implementar o nucleo do algoritmo ja descrito, ou seja, o corpo das funcoes reativas a cada entrada possivel:
+	  	handleUponReqEntry()                // recebe do nivel de cima (app)
+			handleUponReqExit()                 // recebe do nivel de cima (app)
+			handleUponDeliverRespOk(msgOutro)   // recebe do nivel de baixo
+			handleUponDeliverReqEntry(msgOutro) // recebe do nivel de baixo
 */
 
 package DIMEX
@@ -59,7 +57,7 @@ type DIMEX_Module struct {
 	nbrResps  int
 	dbg       bool
 
-	Pp2plink *PP2PLink.PP2PLink // acesso aa comunicacao enviar por PP2PLinq.Req  e receber por PP2PLinq.Ind
+	Pp2plink *PP2PLink.PP2PLink // acesso a comunicacao pra enviar por PP2PLinq.Req e receber por PP2PLinq.Ind
 }
 
 // ------------------------------------------------------------------------------------

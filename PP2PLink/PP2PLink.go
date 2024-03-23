@@ -127,7 +127,7 @@ func (module *PP2PLink) Send(message PP2PLink_Req_Message) {
 		module.Cache[message.To] = conn
 	}
 	// calcula tamanho da mensagem e monta string de 4 caracteres numericos com o tamanho.
-	// completa com 0s aa esquerda para fechar tamanho se necessario.
+	// completa com 0s a esquerda para fechar tamanho se necessario.
 	str := strconv.Itoa(len(message.Message))
 	for len(str) < 4 {
 		str = "0" + str
