@@ -132,25 +132,46 @@ func (module *DIMEX_Module) Start() {
 // ------------------------------------------------------------------------------------
 
 func (module *DIMEX_Module) handleUponReqEntry() {
-	/*
-					upon event [ dmx, Entry  |  r ]  do
-		    			lts.ts++
-		    			myTs := lts
-		    			resps := 0
-		    			para todo processo p
-							trigger [ pl , Send | [ reqEntry, r, myTs ]
-		    			estado := queroSC
-	*/
+/*
+	upon event [ dmx, Entry  |  r ]  do                  - EVENTO DE ENTRADA
+		lts.ts++                                             - AUMENTA O CONTADOR DE TIMESTAMP
+		myTs  := lts                                         - ATUALIZA O TIMESTAMP COM O VALOR ATUAL
+		resps := 0                                           - ZERA CONTADOR DE RESPOSTAS
+		para todo processo p                                 - PARA CADA PROCESSO
+			trigger [ pl , Send | [ reqEntry, r, myTs ]          - ENVIA MENSAGEM DE REQUISICAO DE ENTRADA
+		estado := queroSC                                    - ATUALIZA ESTADO PARA queroSC
+*/
+	module.lcl++
+	myTs := module.lcl
+	resps := 0
+
+	for _, p := range module.addresses {
+		module.Pp2plink.Req <- PP2PLink.Message{
+			Dest: p,
+			Message: fmt.Sprintf("[reqEntry, %d, %d]", module.id, myTs),
+		}
+	}
+
+	module.st = queroSC
 }
 
 func (module *DIMEX_Module) handleUponReqExit() {
-	/*
-						upon event [ dmx, Exit  |  r  ]  do
-		       				para todo [p, r, ts ] em waiting
-		          				trigger [ pl, Send | p , [ respOk, r ]  ]
-		    				estado := naoQueroSC
-							waiting := {}
-	*/
+/*
+	upon event [ dmx, Exit  |  r  ]  do                 - EVENTO DE SAIDA
+		para todo [p, r, ts ] em waiting                    - PARA CADA PROCESSO EM waiting
+			trigger [ pl, Send | p , [ respOk, r ]  ]           - ENVIA MENSAGEM DE RESPOSTA (respOk e r)
+		estado  := naoQueroSC                               - ATUALIZA ESTADO PARA naoQueroSC
+		waiting := {}                                       - LIMPA waiting
+*/
+	for _, wr := range module.waiting {
+		module.Pp2plink.Req <- PP2PLink.Message{
+			Dest: wr,
+			Message: fmt.Sprintf("[respOk, %d]", module.id),
+		}
+	}
+
+	module.st = naoQueroSC
+	module.waiting = []bool{}
 }
 
 // ------------------------------------------------------------------------------------
@@ -160,29 +181,46 @@ func (module *DIMEX_Module) handleUponReqExit() {
 // ------------------------------------------------------------------------------------
 
 func (module *DIMEX_Module) handleUponDeliverRespOk(msgOutro PP2PLink.PP2PLink_Ind_Message) {
-	/*
-						upon event [ pl, Deliver | p, [ respOk, r ] ]
-		      				resps++
-		      				se resps = N
-		    				então trigger [ dmx, Deliver | free2Access ]
-		  					    estado := estouNaSC
+/*
+	upon event [ pl, Deliver | p, [ respOk, r ] ]
+		resps++
+		se resps = N
+			entao trigger [ dmx, Deliver | free2Access ]
+			estado := estouNaSC
 
-	*/
+*/
+	module.resps++
+	if module.resps == N {
+		module.Pp2plink.Req <- PP2PLink.PP2PLink_Req_Message{
+			To:      "dmx",
+			Message: "free2Access",
+		}
+		module.estado = estouNaSC
+	}
 }
 
 func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink_Ind_Message) {
-	// outro processo quer entrar na SC
-	/*
-						upon event [ pl, Deliver | p, [ reqEntry, r, rts ]  do
-		     				se (estado == naoQueroSC)   OR
-		        				 (estado == QueroSC AND  myTs >  ts)
-							então  trigger [ pl, Send | p , [ respOk, r ]  ]
-		 					senão
-		        				se (estado == estouNaSC) OR
-		           					 (estado == QueroSC AND  myTs < ts)
-		        				então  postergados := postergados + [p, r ]
-		     					lts.ts := max(lts.ts, rts.ts)
-	*/
+// outro processo quer entrar na SC
+/*
+	upon event [ pl, Deliver | p, [ reqEntry, r, rts ]  do
+		se (estado == naoQueroSC) OR (estado == QueroSC AND  myTs >  ts)
+			entao trigger [ pl, Send | p , [ respOk, r ]  ]
+		senao
+			se (estado == estouNaSC) OR (estado == QueroSC AND  myTs < ts)
+				entao postergados := postergados + [p, r ]
+				lts.ts := max(lts.ts, rts.ts)
+*/
+	if module.estado == naoQueroSC || (module.estado == QueroSC && module.myTs > ts) {
+		module.Pp2plink.Req <- PP2PLink.PP2PLink_Req_Message{
+			To:      msgOutro.From,
+			Message: "[respOk, r]",
+		}
+	} else {
+		if module.estado == estouNaSC || (module.estado == QueroSC && module.myTs < ts) {
+			module.postergados = append(module.postergados, [msgOutro.From, r])
+		}
+		module.lts.ts = max(module.lts.ts, rts.ts)
+	}
 }
 
 // ------------------------------------------------------------------------------------
