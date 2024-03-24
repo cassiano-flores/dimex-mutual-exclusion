@@ -21,6 +21,7 @@ package DIMEX
 import (
 	PP2PLink "SD/PP2PLink"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -54,8 +55,8 @@ type DIMEX_Module struct {
 	waiting   []bool       // processos aguardando tem flag true
 	lcl       int          // relogio logico local
 	reqTs     int          // timestamp local da ultima requisicao deste processo
-	nbrResps  int
-	dbg       bool
+	nbrResps  int          // contador de respostas
+	dbg       bool         // flag para depuracao
 
 	Pp2plink *PP2PLink.PP2PLink // acesso a comunicacao pra enviar por PP2PLinq.Req e receber por PP2PLinq.Ind
 }
@@ -142,11 +143,11 @@ func (module *DIMEX_Module) handleUponReqEntry() {
 		estado := queroSC                                    - ATUALIZA ESTADO PARA queroSC
 */
 	module.lcl++
-	myTs  := module.lcl
-	resps := 0
+	myTs := module.lcl
+	module.nbrResps = 0
 
-	for _, p := range module.addresses {
-		module.sendToLink(p, fmt.Sprintf("[reqEntry, %d, %d]", module.id, myTs), " ")
+	for p := 0; p < len(module.addresses); p++ {
+		module.sendToLink(module.addresses[p], fmt.Sprintf("[reqEntry, %d, %d]", module.id, myTs), "  ")
 	}
 
 	module.st = wantMX
@@ -160,12 +161,14 @@ func (module *DIMEX_Module) handleUponReqExit() {
 		estado  := naoQueroSC                               - ATUALIZA ESTADO PARA naoQueroSC
 		waiting := {}                                       - LIMPA waiting
 */
-	for _, wp := range module.waiting {
-		module.sendToLink(wp, fmt.Sprintf("[respOk, %d]", module.id), " ")
+	for p, waiting := range module.waiting {
+		if (waiting) {
+			module.sendToLink(module.addresses[p], fmt.Sprintf("[respOk, %d]", module.id), "  ")
+		}
 	}
 
 	module.st = noMX
-	module.waiting = []bool{}
+	module.waiting = make([]bool, len(module.addresses))
 }
 
 // ------------------------------------------------------------------------------------
@@ -182,9 +185,10 @@ func (module *DIMEX_Module) handleUponDeliverRespOk(msgOutro PP2PLink.PP2PLink_I
 			entao trigger [ dmx, Deliver | free2Access ]        - ENVIA MENSAGEM DE LIBERACAO
 			estado := estouNaSC                                 - ATUALIZA ESTADO PARA estouNaSC
 */
-	module.resps++
-	if (module.resps == N) {
-		module.sendToLink("dmx", "free2Access", " ")
+	module.nbrResps++
+	if (module.nbrResps == len(module.addresses)) {
+		// module.sendToLink("dmx", "free2Access", " ")
+		module.Ind <- dmxResp{}
 		module.st = inMX
 	}
 }
@@ -200,13 +204,19 @@ func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink
 				entao postergados := postergados + [p, r ]                            - ADICIONA A POSTERGADOS
 				lts.ts := max(lts.ts, rts.ts)                                       - ATUALIZA O TIMESTAMP
 */
-	if ((module.st == noMX) || ((module.st == wantMX) && (module.reqTs > myTs))) {
-		module.sendToLink(msgOutro.From, "[respOk, r]", " ")
+	// extrai ID, timestamp e relogio logico local da mensagem recebida
+	othId, _ := strconv.Atoi(strings.Split(msgOutro.Message, ",")[1])
+	othTs, _ := strconv.Atoi(strings.Split(msgOutro.Message, ",")[2])
+
+	if ((module.st == noMX) || ((module.st == wantMX) && (module.reqTs > othTs))) {
+		module.sendToLink(module.addresses[othId], fmt.Sprintf("[respOk, %d]", module.id), "  ")
 	} else {
-		if ((module.st == inMX) || ((module.st == wantMX) && (module.reqTs < myTs))) {
-			module.postergados = append(module.postergados, [2]string{msgOutro.From, msgOutro.Message})
+		if ((module.st == inMX) || ((module.st == wantMX) && (module.reqTs < othTs))) {
+			module.waiting[othId] = true
 		}
-		module.lts.ts = max(module.lts.ts, rts.ts)
+		if (othTs > module.lcl) {
+			module.lcl = othTs
+		}
 	}
 }
 
