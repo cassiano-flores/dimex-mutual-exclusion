@@ -142,17 +142,14 @@ func (module *DIMEX_Module) handleUponReqEntry() {
 		estado := queroSC                                    - ATUALIZA ESTADO PARA queroSC
 */
 	module.lcl++
-	myTs := module.lcl
+	myTs  := module.lcl
 	resps := 0
 
 	for _, p := range module.addresses {
-		module.Pp2plink.Req <- PP2PLink.Message{
-			Dest: p,
-			Message: fmt.Sprintf("[reqEntry, %d, %d]", module.id, myTs),
-		}
+		module.sendToLink(p, fmt.Sprintf("[reqEntry, %d, %d]", module.id, myTs), " ")
 	}
 
-	module.st = queroSC
+	module.st = wantMX
 }
 
 func (module *DIMEX_Module) handleUponReqExit() {
@@ -163,14 +160,11 @@ func (module *DIMEX_Module) handleUponReqExit() {
 		estado  := naoQueroSC                               - ATUALIZA ESTADO PARA naoQueroSC
 		waiting := {}                                       - LIMPA waiting
 */
-	for _, wr := range module.waiting {
-		module.Pp2plink.Req <- PP2PLink.Message{
-			Dest: wr,
-			Message: fmt.Sprintf("[respOk, %d]", module.id),
-		}
+	for _, wp := range module.waiting {
+		module.sendToLink(wp, fmt.Sprintf("[respOk, %d]", module.id), " ")
 	}
 
-	module.st = naoQueroSC
+	module.st = noMX
 	module.waiting = []bool{}
 }
 
@@ -182,42 +176,35 @@ func (module *DIMEX_Module) handleUponReqExit() {
 
 func (module *DIMEX_Module) handleUponDeliverRespOk(msgOutro PP2PLink.PP2PLink_Ind_Message) {
 /*
-	upon event [ pl, Deliver | p, [ respOk, r ] ]
-		resps++
-		se resps = N
-			entao trigger [ dmx, Deliver | free2Access ]
-			estado := estouNaSC
-
+	upon event [ pl, Deliver | p, [ respOk, r ] ]       - EVENTO DE RECEBIMENTO DE RESPOSTA
+		resps++                                             - AUMENTA CONTADOR DE RESPOSTAS
+		se resps = N                                        - SE TODOS RESPONDERAM
+			entao trigger [ dmx, Deliver | free2Access ]        - ENVIA MENSAGEM DE LIBERACAO
+			estado := estouNaSC                                 - ATUALIZA ESTADO PARA estouNaSC
 */
 	module.resps++
-	if module.resps == N {
-		module.Pp2plink.Req <- PP2PLink.PP2PLink_Req_Message{
-			To:      "dmx",
-			Message: "free2Access",
-		}
-		module.estado = estouNaSC
+	if (module.resps == N) {
+		module.sendToLink("dmx", "free2Access", " ")
+		module.st = inMX
 	}
 }
 
 func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink_Ind_Message) {
 // outro processo quer entrar na SC
 /*
-	upon event [ pl, Deliver | p, [ reqEntry, r, rts ]  do
-		se (estado == naoQueroSC) OR (estado == QueroSC AND  myTs >  ts)
-			entao trigger [ pl, Send | p , [ respOk, r ]  ]
-		senao
-			se (estado == estouNaSC) OR (estado == QueroSC AND  myTs < ts)
-				entao postergados := postergados + [p, r ]
-				lts.ts := max(lts.ts, rts.ts)
+	upon event [ pl, Deliver | p, [ reqEntry, r, rts ]  do                - EVENTO DE RECEBIMENTO DE REQUISICAO
+		se (estado == naoQueroSC) OR (estado == QueroSC AND  myTs >  ts)      - SE NAO QUER ACESSAR OU QUER E TEM PRIORIDADE
+			entao trigger [ pl, Send | p , [ respOk, r ]  ]                       - ENVIA MENSAGEM DE RESPOSTA (respOk e r)
+		senao                                                                 - SENAO
+			se (estado == estouNaSC) OR (estado == QueroSC AND  myTs < ts)        - SE ESTA NA SC OU QUER E TEM PRIORIDADE
+				entao postergados := postergados + [p, r ]                            - ADICIONA A POSTERGADOS
+				lts.ts := max(lts.ts, rts.ts)                                       - ATUALIZA O TIMESTAMP
 */
-	if module.estado == naoQueroSC || (module.estado == QueroSC && module.myTs > ts) {
-		module.Pp2plink.Req <- PP2PLink.PP2PLink_Req_Message{
-			To:      msgOutro.From,
-			Message: "[respOk, r]",
-		}
+	if ((module.st == noMX) || ((module.st == wantMX) && (module.reqTs > myTs))) {
+		module.sendToLink(msgOutro.From, "[respOk, r]", " ")
 	} else {
-		if module.estado == estouNaSC || (module.estado == QueroSC && module.myTs < ts) {
-			module.postergados = append(module.postergados, [msgOutro.From, r])
+		if ((module.st == inMX) || ((module.st == wantMX) && (module.reqTs < myTs))) {
+			module.postergados = append(module.postergados, [2]string{msgOutro.From, msgOutro.Message})
 		}
 		module.lts.ts = max(module.lts.ts, rts.ts)
 	}
