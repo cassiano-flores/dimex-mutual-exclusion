@@ -1,6 +1,9 @@
 // Construido como parte da disciplina: Sistemas Distribuidos - PUCRS - Escola Politecnica
 // Professor: Fernando Dotti  (https://fldotti.github.io/)
 
+// Autor:
+// Cassiano Luis Flores Michel (20204012-7)
+
 /*
   Modulo representando Algoritmo de Exclusao Mutua Distribuida: Semestre 2023/1
 	Aspectos a observar:
@@ -111,8 +114,8 @@ func (module *DIMEX_Module) Start() {
 				}
 
 			case msgOutro := <-module.Pp2plink.Ind: // vindo de outro processo
-				//fmt.Printf("dimex recebe da rede: ", msgOutro)
-				if strings.Contains(msgOutro.Message, "respOK") {
+				// fmt.Printf("dimex recebe da rede: ", msgOutro.Message)
+				if strings.Contains(msgOutro.Message, "respOk") {
 					module.outDbg("         <<<---- responde! " + msgOutro.Message)
 					module.handleUponDeliverRespOk(msgOutro) // ENTRADA DO ALGORITMO
 
@@ -173,7 +176,7 @@ func (module *DIMEX_Module) handleUponReqExit() {
 
 // ------------------------------------------------------------------------------------
 // ------- tratamento de mensagens de outros processos
-// ------- UPON respOK
+// ------- UPON respOk
 // ------- UPON reqEntry
 // ------------------------------------------------------------------------------------
 
@@ -187,14 +190,12 @@ func (module *DIMEX_Module) handleUponDeliverRespOk(msgOutro PP2PLink.PP2PLink_I
 */
 	module.nbrResps++
 	if (module.nbrResps == len(module.addresses)) {
-		// module.sendToLink("dmx", "free2Access", " ")
 		module.Ind <- dmxResp{}
 		module.st = inMX
 	}
 }
 
 func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink_Ind_Message) {
-// outro processo quer entrar na SC
 /*
 	upon event [ pl, Deliver | p, [ reqEntry, r, rts ]  do                - EVENTO DE RECEBIMENTO DE REQUISICAO
 		se (estado == naoQueroSC) OR (estado == QueroSC AND  myTs >  ts)      - SE NAO QUER ACESSAR OU QUER E TEM PRIORIDADE
@@ -204,14 +205,14 @@ func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink
 				entao postergados := postergados + [p, r ]                            - ADICIONA A POSTERGADOS
 				lts.ts := max(lts.ts, rts.ts)                                       - ATUALIZA O TIMESTAMP
 */
-	// extrai ID, timestamp e relogio logico local da mensagem recebida
-	othId, _ := strconv.Atoi(strings.Split(msgOutro.Message, ",")[1])
-	othTs, _ := strconv.Atoi(strings.Split(msgOutro.Message, ",")[2])
+	parts    := strings.Split(msgOutro.Message, ",")
+	othId, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+	othTs, _ := strconv.Atoi((string([]rune(strings.TrimSpace(parts[2]))[0])))
 
-	if ((module.st == noMX) || ((module.st == wantMX) && (module.reqTs > othTs))) {
+	if ((module.st == noMX) || ((module.st == wantMX) && (othTs > module.reqTs))) {
 		module.sendToLink(module.addresses[othId], fmt.Sprintf("[respOk, %d]", module.id), "  ")
 	} else {
-		if ((module.st == inMX) || ((module.st == wantMX) && (module.reqTs < othTs))) {
+		if ((module.st == inMX) || ((module.st == wantMX) && (othTs < module.reqTs))) {
 			module.waiting[othId] = true
 		}
 		if (othTs > module.lcl) {
