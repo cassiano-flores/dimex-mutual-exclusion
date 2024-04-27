@@ -3,9 +3,9 @@
 
 /*
 	Uso para exemplo:
-	  go run useDIMEX.go 0 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002 ")
-	  go run useDIMEX.go 1 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002 ")
-	  go run useDIMEX.go 2 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002 ")
+	  go run useDIMEX.go 0 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002
+	  go run useDIMEX.go 1 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002
+	  go run useDIMEX.go 2 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002
 
 	LANCAR N PROCESSOS EM SHELL's DIFERENTES, UMA PARA CADA PROCESSO.
 	para cada processo fornecer: seu id unico (0, 1, 2 ...) e a mesma lista de processos.
@@ -59,7 +59,7 @@ func main() {
 	fmt.Println(dmx)
 
 	// abre arquivo que TODOS processos devem poder usar
-	file, err := os.OpenFile("./mxOUT.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile("./mxOUT.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Println("Error opening file:", err)
 		return
@@ -72,10 +72,15 @@ func main() {
 	for {
 		// SOLICITA ACESSO AO DIMEX
 		fmt.Println("[ APP id: ", id, " PEDE   MX ]")
+
+		///////////////////////////////////////////////////////////////////////////////////////
 		dmx.Req <- DIMEX.ENTER
+
 		//fmt.Println("[ APP id: ", id, " ESPERA MX ]")
 		// ESPERA LIBERACAO DO MODULO DIMEX
 		<-dmx.Ind //
+		
+		///////////////////////////////////////////////////////////////////////////////////////
 
 		// A PARTIR DAQUI ESTA ACESSANDO O ARQUIVO SOZINHO
 		_, err = file.WriteString("|") // marca entrada no arquivo

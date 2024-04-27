@@ -24,7 +24,6 @@ package DIMEX
 import (
 	PP2PLink "SD/PP2PLink"
 	"fmt"
-	"strconv"
 	"strings"
 )
 
@@ -122,7 +121,6 @@ func (module *DIMEX_Module) Start() {
 				} else if strings.Contains(msgOutro.Message, "reqEntry") {
 					module.outDbg("          <<<---- pede??  " + msgOutro.Message)
 					module.handleUponDeliverReqEntry(msgOutro) // ENTRADA DO ALGORITMO
-
 				}
 			}
 		}
@@ -146,13 +144,15 @@ func (module *DIMEX_Module) handleUponReqEntry() {
 		estado := queroSC                                    - ATUALIZA ESTADO PARA queroSC
 */
 	module.lcl++
-	myTs := module.lcl
+	module.reqTs = module.lcl
 	module.nbrResps = 0
 
-	for p := 0; p < len(module.addresses); p++ {
-		module.sendToLink(module.addresses[p], fmt.Sprintf("[reqEntry, %d, %d]", module.id, myTs), "  ")
+	for i := 0; i < len(module.addresses); i++ {
+		if (i != module.id) {
+			content := fmt.Sprintf("[reqEntry, %d, %d]", module.id, module.reqTs)
+			module.sendToLink(module.addresses[i], content, fmt.Sprintf("P%d: ", module.id))
+		}
 	}
-
 	module.st = wantMX
 }
 
@@ -164,12 +164,12 @@ func (module *DIMEX_Module) handleUponReqExit() {
 		estado  := naoQueroSC                               - ATUALIZA ESTADO PARA naoQueroSC
 		waiting := {}                                       - LIMPA waiting
 */
-	for p, waiting := range module.waiting {
-		if (waiting) {
-			module.sendToLink(module.addresses[p], fmt.Sprintf("[respOk, %d]", module.id), "  ")
+	for i := 0; i < len(module.waiting); i++ {
+		if (module.waiting[i]) {
+			content := fmt.Sprintf("[respOk, %d]", module.id)
+			module.sendToLink(module.addresses[i], content, fmt.Sprintf("P%d: ", module.id))
 		}
 	}
-
 	module.st = noMX
 	module.waiting = make([]bool, len(module.addresses))
 }
@@ -189,7 +189,8 @@ func (module *DIMEX_Module) handleUponDeliverRespOk(msgOutro PP2PLink.PP2PLink_I
 			estado := estouNaSC                                 - ATUALIZA ESTADO PARA estouNaSC
 */
 	module.nbrResps++
-	if (module.nbrResps == len(module.addresses)) {
+
+	if (module.nbrResps == (len(module.addresses) - 1)) {
 		module.Ind <- dmxResp{}
 		module.st = inMX
 	}
@@ -205,18 +206,23 @@ func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink
 				entao postergados := postergados + [p, r ]                            - ADICIONA A POSTERGADOS
 				lts.ts := max(lts.ts, rts.ts)                                       - ATUALIZA O TIMESTAMP
 */
-	parts    := strings.Split(msgOutro.Message, ",")
-	othId, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
-	othTs, _ := strconv.Atoi((string([]rune(strings.TrimSpace(parts[2]))[0])))
+	var othId, othReqTs int
+	_, err := fmt.Sscanf(msgOutro.Message, "[reqEntry, %d, %d]", &othId, &othReqTs)
+	if err != nil {
+		fmt.Println("Error reading reqEntry message: ", err)
+		return
+	}
 
-	if ((module.st == noMX) || ((module.st == wantMX) && (othTs > module.reqTs))) {
-		module.sendToLink(module.addresses[othId], fmt.Sprintf("[respOk, %d]", module.id), "  ")
+	if (module.st == noMX) || ((module.st == wantMX) && before(othId, othReqTs, module.id, module.reqTs)) {
+		content := fmt.Sprintf("[respOk, %d]", module.id)
+		module.sendToLink(module.addresses[othId], content, fmt.Sprintf("P%d: ", module.id))
+
 	} else {
-		if ((module.st == inMX) || ((module.st == wantMX) && (othTs < module.reqTs))) {
+		if (module.st == inMX) || ((module.st == wantMX) && before(module.id, module.reqTs, othId, othReqTs)) {
 			module.waiting[othId] = true
 		}
-		if (othTs > module.lcl) {
-			module.lcl = othTs
+		if (othReqTs > module.lcl) {
+			module.lcl = othReqTs
 		}
 	}
 }
