@@ -51,12 +51,18 @@ func main() {
 		return
 	}
 
+	for i := 0; i < 3; i++ {
+		os.Remove(fmt.Sprintf("snapshots_%d.txt", i))
+	}
+
 	id, _ := strconv.Atoi(os.Args[1])
 	addresses := os.Args[2:]
 	// fmt.Print("id: ", id, "   ") fmt.Println(addresses)
 
 	var dmx *DIMEX.DIMEX_Module = DIMEX.NewDIMEX(addresses, id, true)
 	fmt.Println(dmx)
+
+	startedSnapshots := false
 
 	// abre arquivo que TODOS processos devem poder usar
 	file, err := os.OpenFile("./mxOUT.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
@@ -70,18 +76,40 @@ func main() {
 	time.Sleep(3 * time.Second)
 
 	for {
+		/////////////////////////////////////////////////////
+		// Inicia as goroutines na primeira iteração do loop
+		if (!startedSnapshots) {
+			go func() {
+				i := 0
+				for {
+					dmx.SnapshotReq <- i
+					time.Sleep(2 * time.Second)
+					i++
+				}
+			}()
+
+			go func() {
+				i := 0
+				for {
+					dmx.GetSnapshotReq <- i
+					snapshot := <-dmx.GetSnapshotResp
+					DIMEX.SaveSnapshotToFile(snapshot, id)
+					i++
+				}
+			}()
+
+			startedSnapshots = true
+		}
+		/////////////////////////////////////////////////////
 		// SOLICITA ACESSO AO DIMEX
 		fmt.Println("[ APP id: ", id, " PEDE   MX ]")
 
-		///////////////////////////////////////////////////////////////////////////////////////
 		dmx.Req <- DIMEX.ENTER
 
 		//fmt.Println("[ APP id: ", id, " ESPERA MX ]")
 		// ESPERA LIBERACAO DO MODULO DIMEX
-		<-dmx.Ind //
+		<-dmx.Ind
 		
-		///////////////////////////////////////////////////////////////////////////////////////
-
 		// A PARTIR DAQUI ESTA ACESSANDO O ARQUIVO SOZINHO
 		_, err = file.WriteString("|") // marca entrada no arquivo
 		if err != nil {

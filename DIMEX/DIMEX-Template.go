@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -53,6 +54,11 @@ type dmxResp struct { // mensagem do modulo DIMEX informando que pode acessar - 
 type DIMEX_Module struct {
 	Req                chan dmxReq      // canal para receber pedidos da aplicacao (ENTER e EXIT)
 	Ind                chan dmxResp     // canal para informar aplicacao que pode acessar
+
+	SnapshotReq        chan int         // canal para pedir um snapshot
+	GetSnapshotReq     chan int         // canal para recuperar um snapshot
+	GetSnapshotResp    chan Snapshot    // canal para responder com um snapshot
+
 	unreceivedMessages []string     	  // mensagens que ainda nao foram entregues
 	addresses          []string         // endereco de todos, na mesma ordem
 	id                 int              // identificador do processo - eh o indice no array de enderecos acima
@@ -86,8 +92,11 @@ func NewDIMEX(_addresses []string, _id int, _dbg bool) *DIMEX_Module {
 	p2p := PP2PLink.NewPP2PLink(_addresses[_id], _dbg)
 
 	dmx := &DIMEX_Module{
-		Req: make(chan dmxReq, 1),
-		Ind: make(chan dmxResp, 1),
+		Req:             make(chan dmxReq, 1),
+		Ind:             make(chan dmxResp, 1),
+		SnapshotReq:     make(chan int),
+		GetSnapshotReq:  make(chan int),
+		GetSnapshotResp: make(chan Snapshot),
 
 		unreceivedMessages: []string{}, 
 		addresses:          _addresses,
@@ -96,6 +105,7 @@ func NewDIMEX(_addresses []string, _id int, _dbg bool) *DIMEX_Module {
 		waiting:            make([]bool, len(_addresses)),
 		lcl:                0,
 		reqTs:              0,
+		nbrResps:           0,
 		dbg:                _dbg,
 		snapshots:          make(map[int]Snapshot),
 
@@ -104,6 +114,7 @@ func NewDIMEX(_addresses []string, _id int, _dbg bool) *DIMEX_Module {
 	for i := 0; i < len(dmx.waiting); i++ {
 		dmx.waiting[i] = false
 	}
+
 	dmx.Start()
 	dmx.outDbg("Init DIMEX!")
 	return dmx
@@ -114,30 +125,43 @@ func NewDIMEX(_addresses []string, _id int, _dbg bool) *DIMEX_Module {
 // ------------------------------------------------------------------------------------
 
 func (module *DIMEX_Module) Start() {
-
 	go func() {
 		for {
 			select {
-			case dmxR := <-module.Req: // vindo da aplicacao
-				if dmxR == ENTER {
-					module.outDbg("app pede mx")
-					module.handleUponReqEntry() // ENTRADA DO ALGORITMO
+				case dmxR := <-module.Req: // vindo da aplicacao
+					if (dmxR == ENTER) {
+						module.outDbg("app pede mx")
+						module.handleUponReqEntry() // ENTRADA DO ALGORITMO
 
-				} else if dmxR == EXIT {
-					module.outDbg("app libera mx")
-					module.handleUponReqExit() // ENTRADA DO ALGORITMO
-				}
+					} else if (dmxR == EXIT) {
+						module.outDbg("app libera mx")
+						module.handleUponReqExit() // ENTRADA DO ALGORITMO
+					}
 
-			case msgOutro := <-module.Pp2plink.Ind: // vindo de outro processo
-				// fmt.Printf("dimex recebe da rede: ", msgOutro.Message)
-				if strings.Contains(msgOutro.Message, "respOk") {
-					module.outDbg("         <<<---- responde! " + msgOutro.Message)
-					module.handleUponDeliverRespOk(msgOutro) // ENTRADA DO ALGORITMO
+				case msgOutro := <-module.Pp2plink.Ind: // vindo de outro processo
+					// fmt.Printf("dimex recebe da rede: ", msgOutro.Message)
+					if (strings.Contains(msgOutro.Message, "respOk")) {
+						module.outDbg("         <<<---- responde! " + msgOutro.Message)
+						module.handleUponDeliverRespOk(msgOutro) // ENTRADA DO ALGORITMO
 
-				} else if strings.Contains(msgOutro.Message, "reqEntry") {
-					module.outDbg("          <<<---- pede??  " + msgOutro.Message)
-					module.handleUponDeliverReqEntry(msgOutro) // ENTRADA DO ALGORITMO
-				}
+					} else if (strings.Contains(msgOutro.Message, "reqEntry")) {
+						module.outDbg("          <<<---- pede??  " + msgOutro.Message)
+						module.handleUponDeliverReqEntry(msgOutro) // ENTRADA DO ALGORITMO
+					}
+
+				case snapshotId := <-module.SnapshotReq: // vindo da aplicacao
+					module.outDbg("app pede snapshot")
+					module.startSnapshot(snapshotId)
+
+				case getSnapshotId := <-module.GetSnapshotReq: // vindo da aplicacao
+					module.outDbg("app responde snapshot")
+					snapshot, err := module.getSnapshot(getSnapshotId)
+					
+					if (err != nil) {
+						fmt.Println("Error getting snapshot:", err)
+					} else {
+						module.GetSnapshotResp <- snapshot
+					}
 			}
 		}
 	}()
@@ -351,4 +375,23 @@ func removeMessage(slice []string, message string) []string {
 		}
 	}
 	return slice
+}
+
+func SaveSnapshotToFile(snapshot Snapshot, id int) {
+	filename := fmt.Sprintf("snapshots_%d.txt", id)
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if (err != nil) {
+		fmt.Println("Error opening file: ", err)
+		return
+	}
+	defer file.Close()
+
+	snapshotString := snapshotToString(snapshot)
+
+	// Escreve o snapshot no arquivo
+	_, err = file.WriteString(snapshotString)
+	if (err != nil) {
+		fmt.Println("Error writing file: ", err)
+		return
+	}
 }
