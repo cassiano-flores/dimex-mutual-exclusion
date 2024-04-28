@@ -23,6 +23,8 @@ package DIMEX
 
 import (
 	PP2PLink "SD/PP2PLink"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -49,18 +51,30 @@ type dmxResp struct { // mensagem do modulo DIMEX informando que pode acessar - 
 }
 
 type DIMEX_Module struct {
-	Req       chan dmxReq  // canal para receber pedidos da aplicacao (REQ e EXIT)
-	Ind       chan dmxResp // canal para informar aplicacao que pode acessar
-	addresses []string     // endereco de todos, na mesma ordem
-	id        int          // identificador do processo - eh o indice no array de enderecos acima
-	st        State        // estado deste processo na exclusao mutua distribuida
-	waiting   []bool       // processos aguardando tem flag true
-	lcl       int          // relogio logico local
-	reqTs     int          // timestamp local da ultima requisicao deste processo
-	nbrResps  int          // contador de respostas
-	dbg       bool         // flag para depuracao
+	Req                chan dmxReq      // canal para receber pedidos da aplicacao (ENTER e EXIT)
+	Ind                chan dmxResp     // canal para informar aplicacao que pode acessar
+	unreceivedMessages []string     	  // mensagens que ainda nao foram entregues
+	addresses          []string         // endereco de todos, na mesma ordem
+	id                 int              // identificador do processo - eh o indice no array de enderecos acima
+	st                 State            // estado deste processo na exclusao mutua distribuida
+	waiting            []bool           // processos aguardando tem flag true
+	lcl                int              // relogio logico local
+	reqTs              int              // timestamp local da ultima requisicao deste processo
+	nbrResps           int              // contador de respostas
+	dbg                bool             // flag para depuracao
+	snapshots          map[int]Snapshot // snapshots do modulo
 
 	Pp2plink *PP2PLink.PP2PLink // acesso a comunicacao pra enviar por PP2PLinq.Req e receber por PP2PLinq.Ind
+}
+
+type Snapshot struct {
+	id            int
+	state         State
+	waiting       []bool
+	lcl           int
+	reqTs         int
+	nbrResps      int
+	channelStates map[int][]string
 }
 
 // ------------------------------------------------------------------------------------
@@ -75,13 +89,15 @@ func NewDIMEX(_addresses []string, _id int, _dbg bool) *DIMEX_Module {
 		Req: make(chan dmxReq, 1),
 		Ind: make(chan dmxResp, 1),
 
-		addresses: _addresses,
-		id:        _id,
-		st:        noMX,
-		waiting:   make([]bool, len(_addresses)),
-		lcl:       0,
-		reqTs:     0,
-		dbg:       _dbg,
+		unreceivedMessages: []string{}, 
+		addresses:          _addresses,
+		id:                 _id,
+		st:                 noMX,
+		waiting:            make([]bool, len(_addresses)),
+		lcl:                0,
+		reqTs:              0,
+		dbg:                _dbg,
+		snapshots:          make(map[int]Snapshot),
 
 		Pp2plink: p2p}
 
@@ -192,6 +208,7 @@ func (module *DIMEX_Module) handleUponDeliverRespOk(msgOutro PP2PLink.PP2PLink_I
 
 	if (module.nbrResps == (len(module.addresses) - 1)) {
 		module.Ind <- dmxResp{}
+		module.unreceivedMessages = removeMessage(module.unreceivedMessages, msgOutro.Message)
 		module.st = inMX
 	}
 }
@@ -208,7 +225,7 @@ func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink
 */
 	var othId, othReqTs int
 	_, err := fmt.Sscanf(msgOutro.Message, "[reqEntry, %d, %d]", &othId, &othReqTs)
-	if err != nil {
+	if (err != nil) {
 		fmt.Println("Error reading reqEntry message: ", err)
 		return
 	}
@@ -228,6 +245,58 @@ func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink
 }
 
 // ------------------------------------------------------------------------------------
+// ------- snapshot
+// ------------------------------------------------------------------------------------
+
+func (module *DIMEX_Module) startSnapshot(snapshotId int) {
+	// cria o snapshot (salva os estados atuais do modulo)
+	snapshot := Snapshot{
+			id: snapshotId,
+			state: module.st,
+			waiting: module.waiting,
+			lcl: module.lcl,
+			reqTs: module.reqTs,
+			nbrResps: module.nbrResps,
+			channelStates: make(map[int][]string),
+	}
+
+	snapshotString := snapshotToString(snapshot)
+
+	// envia para todos os outros processos
+	for i := range module.addresses {
+		if (i != module.id) {
+			module.sendToLink(module.addresses[i], snapshotString, fmt.Sprintf("P%d: ", module.id))
+		}
+	}
+}
+
+func (module *DIMEX_Module) handleSnapshot(receivedSnapshot string) {
+	snapshot := stringToSnapshot(receivedSnapshot)
+
+	// se o snapshot ainda não foi salvo
+	if _, ok := module.snapshots[snapshot.id]; !ok {
+		module.snapshots[snapshot.id] = snapshot
+
+		// enviar para todos os outros processos
+		for i := range module.addresses {
+			if (i != module.id) {
+				module.sendToLink(module.addresses[i], snapshotToString(snapshot), fmt.Sprintf("P%d: ", module.id))
+			}
+		}
+	}
+	// Save the state of the channel
+	module.snapshots[snapshot.id].channelStates[module.id] = append([]string{}, module.unreceivedMessages...)
+}
+
+func (module *DIMEX_Module) getSnapshot(snapshotId int) (Snapshot, error) {
+	if snapshot, ok := module.snapshots[snapshotId]; ok {
+		return snapshot, nil
+	} else {
+		return Snapshot{}, errors.New("Snapshot not found")
+	}
+}
+
+// ------------------------------------------------------------------------------------
 // ------- funcoes de ajuda
 // ------------------------------------------------------------------------------------
 
@@ -236,6 +305,7 @@ func (module *DIMEX_Module) sendToLink(address string, content string, space str
 	module.Pp2plink.Req <- PP2PLink.PP2PLink_Req_Message{
 		To:      address,
 		Message: content}
+	module.unreceivedMessages = append(module.unreceivedMessages, content)
 }
 
 func before(oneId, oneTs, othId, othTs int) bool {
@@ -252,4 +322,33 @@ func (module *DIMEX_Module) outDbg(s string) {
 	if module.dbg {
 		fmt.Println(". . . . . . . . . . . . [ DIMEX : " + s + " ]")
 	}
+}
+
+func snapshotToString(snapshot Snapshot) string {
+	// serializa o snapshot em uma string JSON para enviar como string
+	snapshotJson, err := json.Marshal(snapshot)
+	if (err != nil) {
+		fmt.Println("Error serializing snapshot:", err)
+	}
+	return string(snapshotJson)
+}
+
+func stringToSnapshot(receivedSnapshot string) Snapshot {
+	var snapshot Snapshot
+
+	// deserializa a string JSON de volta em um objeto snapshot
+	err := json.Unmarshal([]byte(receivedSnapshot), &snapshot)
+	if (err != nil) {
+		fmt.Println("Error deserializing snapshot:", err)
+	}
+	return snapshot
+}
+
+func removeMessage(slice []string, message string) []string {
+	for i, item := range slice {
+		if (item == message) {
+			return append(slice[:i], slice[i+1:]...)
+		}
+	}
+	return slice
 }
