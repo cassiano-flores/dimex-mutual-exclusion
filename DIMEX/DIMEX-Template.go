@@ -150,7 +150,7 @@ func (module *DIMEX_Module) Start() {
 						module.handleUponDeliverReqEntry(msgOutro) // ENTRADA DO ALGORITMO
 
 					} else if (strings.Contains(msgOutro.Message, "snapshot")) {
-  		      module.outDbg("          <<<---- snapshot recebido  " + msgOutro.Message)
+  		      module.outDbg("          <<<---- snapshot recebido !!! ")
       		  module.handleSnapshot(msgOutro.Message) // ENTRADA DO ALGORITMO
     			}
 
@@ -381,18 +381,11 @@ func removeMessage(slice []string, message string) []string {
 	return slice
 }
 
-func SaveSnapshotToFile(snapshot Snapshot) {
-	file, err := os.OpenFile("snapshots.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
-	if (err != nil) {
-		fmt.Println("Error opening file: ", err)
-		return
-	}
-	defer file.Close()
-
+func SaveSnapshotToFile(snapshot Snapshot, file *os.File) {
 	snapshotString := snapshotToString(snapshot)
 
 	// escreve o snapshot no arquivo
-	_, err = file.WriteString(snapshotString)
+	_, err := file.WriteString(snapshotString + "\n")
 	if (err != nil) {
 		fmt.Println("Error writing file: ", err)
 		return

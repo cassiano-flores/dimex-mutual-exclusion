@@ -62,11 +62,18 @@ func main() {
 
 	// abre arquivo que TODOS processos devem poder usar
 	file, err := os.OpenFile("./mxOUT.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Println("Error opening file:", err)
+	if (err != nil) {
+		fmt.Println("Error opening file: ", err)
 		return
 	}
 	defer file.Close() // garante que o arquivo esta fechado no final da funcao
+
+	fileSnapshot, err := os.OpenFile("./snapshots.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
+	if (err != nil) {
+		fmt.Println("Error opening file: ", err)
+		return
+	}
+	defer file.Close()
 
 	// espera para facilitar inicializacao de todos processos (a mao)
 	time.Sleep(3 * time.Second)
@@ -90,7 +97,7 @@ func main() {
 					dmx.GetSnapshotReq <- i
 					snapshot := <-dmx.GetSnapshotResp
 					time.Sleep(3 * time.Second)
-					DIMEX.SaveSnapshotToFile(snapshot)
+					DIMEX.SaveSnapshotToFile(snapshot, fileSnapshot)
 					i++
 				}
 			}()
