@@ -74,13 +74,14 @@ type DIMEX_Module struct {
 }
 
 type Snapshot struct {
-	id            int
-	state         State
-	waiting       []bool
-	lcl           int
-	reqTs         int
-	nbrResps      int
-	channelStates map[int][]string
+	Type          string
+	Id            int
+	State         State
+	Waiting       []bool
+	Lcl           int
+	ReqTs         int
+	NbrResps      int
+	ChannelStates map[int][]string
 }
 
 // ------------------------------------------------------------------------------------
@@ -147,8 +148,13 @@ func (module *DIMEX_Module) Start() {
 					} else if (strings.Contains(msgOutro.Message, "reqEntry")) {
 						module.outDbg("          <<<---- pede??  " + msgOutro.Message)
 						module.handleUponDeliverReqEntry(msgOutro) // ENTRADA DO ALGORITMO
-					}
 
+					} else if (strings.Contains(msgOutro.Message, "snapshot")) {
+  		      module.outDbg("          <<<---- snapshot recebido  " + msgOutro.Message)
+      		  module.handleSnapshot(msgOutro.Message) // ENTRADA DO ALGORITMO
+    			}
+
+				///////////////////////////////////////////////////////////////////////////////////
 				case snapshotId := <-module.SnapshotReq: // vindo da aplicacao
 					module.outDbg("app pede snapshot")
 					module.startSnapshot(snapshotId)
@@ -275,21 +281,19 @@ func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink
 func (module *DIMEX_Module) startSnapshot(snapshotId int) {
 	// cria o snapshot (salva os estados atuais do modulo)
 	snapshot := Snapshot{
-			id: snapshotId,
-			state: module.st,
-			waiting: module.waiting,
-			lcl: module.lcl,
-			reqTs: module.reqTs,
-			nbrResps: module.nbrResps,
-			channelStates: make(map[int][]string),
+		Type:          "snapshot",
+		Id:            snapshotId,
+		State:         module.st,
+		Waiting:       module.waiting,
+		Lcl:           module.lcl,
+		ReqTs:         module.reqTs,
+		NbrResps:      module.nbrResps,
+		ChannelStates: make(map[int][]string),
 	}
-
-	snapshotString := snapshotToString(snapshot)
-
 	// envia para todos os outros processos
 	for i := range module.addresses {
 		if (i != module.id) {
-			module.sendToLink(module.addresses[i], snapshotString, fmt.Sprintf("P%d: ", module.id))
+			module.sendToLink(module.addresses[i], snapshotToString(snapshot), fmt.Sprintf("P%d: ", module.id))
 		}
 	}
 }
@@ -298,8 +302,8 @@ func (module *DIMEX_Module) handleSnapshot(receivedSnapshot string) {
 	snapshot := stringToSnapshot(receivedSnapshot)
 
 	// se o snapshot ainda não foi salvo
-	if _, ok := module.snapshots[snapshot.id]; !ok {
-		module.snapshots[snapshot.id] = snapshot
+	if _, ok := module.snapshots[snapshot.Id]; !ok {
+		module.snapshots[snapshot.Id] = snapshot
 
 		// enviar para todos os outros processos
 		for i := range module.addresses {
@@ -308,8 +312,8 @@ func (module *DIMEX_Module) handleSnapshot(receivedSnapshot string) {
 			}
 		}
 	}
-	// Save the state of the channel
-	module.snapshots[snapshot.id].channelStates[module.id] = append([]string{}, module.unreceivedMessages...)
+	// salva o estado do canal, com as mensagens não recebidas
+	module.snapshots[snapshot.Id].ChannelStates[module.id] = append([]string{}, module.unreceivedMessages...)
 }
 
 func (module *DIMEX_Module) getSnapshot(snapshotId int) (Snapshot, error) {
@@ -377,9 +381,8 @@ func removeMessage(slice []string, message string) []string {
 	return slice
 }
 
-func SaveSnapshotToFile(snapshot Snapshot, id int) {
-	filename := fmt.Sprintf("snapshots_%d.txt", id)
-	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func SaveSnapshotToFile(snapshot Snapshot) {
+	file, err := os.OpenFile("snapshots.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
 	if (err != nil) {
 		fmt.Println("Error opening file: ", err)
 		return
@@ -388,7 +391,7 @@ func SaveSnapshotToFile(snapshot Snapshot, id int) {
 
 	snapshotString := snapshotToString(snapshot)
 
-	// Escreve o snapshot no arquivo
+	// escreve o snapshot no arquivo
 	_, err = file.WriteString(snapshotString)
 	if (err != nil) {
 		fmt.Println("Error writing file: ", err)

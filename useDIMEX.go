@@ -51,10 +51,6 @@ func main() {
 		return
 	}
 
-	for i := 0; i < 3; i++ {
-		os.Remove(fmt.Sprintf("snapshots_%d.txt", i))
-	}
-
 	id, _ := strconv.Atoi(os.Args[1])
 	addresses := os.Args[2:]
 	// fmt.Print("id: ", id, "   ") fmt.Println(addresses)
@@ -93,7 +89,8 @@ func main() {
 				for {
 					dmx.GetSnapshotReq <- i
 					snapshot := <-dmx.GetSnapshotResp
-					DIMEX.SaveSnapshotToFile(snapshot, id)
+					time.Sleep(3 * time.Second)
+					DIMEX.SaveSnapshotToFile(snapshot)
 					i++
 				}
 			}()
