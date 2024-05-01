@@ -385,7 +385,7 @@ func SaveSnapshotToFile(snapshot Snapshot, file *os.File) {
 	snapshotString := snapshotToString(snapshot)
 
 	// escreve o snapshot no arquivo
-	_, err := file.WriteString(snapshotString + "\n")
+	_, err := file.WriteString("\n" + snapshotString + "\n")
 	if (err != nil) {
 		fmt.Println("Error writing file: ", err)
 		return
