@@ -1,14 +1,22 @@
 
-{"Type":"snapshot","Id":0,"State":0,"Waiting":[false,false,false]}
+{"Type":"snapshot","Id":0,"IdProcess":1,"State":0,"Waiting":[false,false,false],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":0,"IdProcess":0,"State":0,"Waiting":[false,false,false]},"2":{"Type":"snapshotResponse","Id":0,"IdProcess":2,"State":0,"Waiting":[false,false,false]}}}
 
-{"Type":"snapshot","Id":1,"State":1,"Waiting":[false,false,false]}
+{"Type":"snapshot","Id":1,"IdProcess":1,"State":1,"Waiting":[false,false,true],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":1,"IdProcess":0,"State":1,"Waiting":[false,false,false]},"2":{"Type":"snapshotResponse","Id":1,"IdProcess":2,"State":1,"Waiting":[true,false,false]}}}
 
-{"Type":"snapshot","Id":2,"State":1,"Waiting":[true,true,false]}
 
-{"Type":"snapshot","Id":3,"State":2,"Waiting":[true,true,false]}
+{"Type":"snapshot","Id":2,"IdProcess":1,"State":1,"Waiting":[false,false,false],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":2,"IdProcess":0,"State":1,"Waiting":[false,false,false]},"2":{"Type":"snapshotResponse","Id":2,"IdProcess":2,"State":1,"Waiting":[false,false,false]}}
+{"Type":"snapshot","Id":3,"IdProcess":1,"State":1,"Waiting":[false,false,false],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":3,"IdProcess":0,"State":1,"Waiting":[false,true,false]},"2":{"Type":"snapshotResponse","Id":3,"IdProcess":2,"State":1,"Waiting":[false,false,false]}}}
 
-{"Type":"snapshot","Id":4,"State":1,"Waiting":[false,false,false]}
 
-{"Type":"snapshot","Id":5,"State":1,"Waiting":[false,false,false]}
+{"Type":"snapshot","Id":4,"IdProcess":1,"State":0,"Waiting":[false,false,false],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":4,"IdProcess":0,"State":2,"Waiting":[false,true,false]},"2":{"Type":"snapshotResponse","Id":4,"IdProcess":2,"State":0,"Waiting":[false,false,false]}}}
+
+{"Type":"snapshot","Id":5,"IdProcess":1,"State":1,"Waiting":[false,false,false],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":5,"IdProcess":0,"State":1,"Waiting":[false,false,false]},"2":{"Type":"snapshotResponse","Id":5,"IdProcess":2,"State":1,"Waiting":[false,false,false]}}}
+{"Type":"snapshot","Id":6,"IdProcess":1,"State":1,"Waiting":[true,false,false],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":6,"IdProcess":0,"State":1,"Waiting":[false,false,false]},"2":{"Type":"snapshotResponse","Id":6,"IdProcess":2,"State":1,"Waiting":[false,false,false]}}}
+
+{"Type":"snapshot","Id":7,"IdProcess":1,"State":1,"Waiting":[false,false,true],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":7,"IdProcess":0,"State":1,"Waiting":[false,false,false]},"2":{"Type":"snapshotResponse","Id":7,"IdProcess":2,"State":1,"Waiting":[false,false,false]}}}
+
+{"Type":"snapshot","Id":8,"IdProcess":1,"State":1,"Waiting":[false,false,false],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":8,"IdProcess":0,"State":1,"Waiting":[false,false,false]},"2":{"Type":"snapshotResponse","Id":8,"IdProcess":2,"State":1,"Waiting":[false,false,false]}}}
+
+{"Type":"snapshot","Id":9,"IdProcess":1,"State":1,"Waiting":[false,false,false],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":9,"IdProcess":0,"State":1,"Waiting":[false,false,false]},"2":{"Type":"snapshotResponse","Id":9,"IdProcess":2,"State":1,"Waiting":[false,false,false]}}
+{"Type":"snapshot","Id":10,"IdProcess":1,"State":2,"Waiting":[false,false,true],"SnapshotSaved":true,"ChannelStates":{"0":{"Type":"snapshotResponse","Id":10,"IdProcess":0,"State":1,"Waiting":[false,false,false]},"2":{"Type":"snapshotResponse","Id":10,"IdProcess":2,"State":2,"Waiting":[true,false,false]}}}
 }
-{"Type":"snapshot","Id":6,"State":1,"Waiting":[false,false,false]}

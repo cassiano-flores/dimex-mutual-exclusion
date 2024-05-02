@@ -52,8 +52,8 @@ type dmxResp struct { // mensagem do modulo DIMEX informando que pode acessar - 
 }
 
 type DIMEX_Module struct {
-	Req                chan dmxReq          // canal para receber pedidos da aplicacao (ENTER e EXIT)
-	Ind                chan dmxResp         // canal para informar aplicacao que pode acessar
+	Req                chan dmxReq      // canal para receber pedidos da aplicacao (ENTER e EXIT)
+	Ind                chan dmxResp     // canal para informar aplicacao que pode acessar
 
 	// unconfirmedMessages []string     	  // mensagens que ainda nao foram entregues
 	addresses           []string        // endereco de todos, na mesma ordem
@@ -73,9 +73,19 @@ type DIMEX_Module struct {
 type Snapshot struct {
 	Type          string
 	Id            int
+	IdProcess     int
 	State         State
 	Waiting       []bool
-	ChannelStates map[int]Snapshot
+	SnapshotSaved bool
+	ChannelStates map[int]SnapshotResponse
+}
+
+type SnapshotResponse struct {
+	Type          string
+	Id            int
+	IdProcess     int
+	State         State
+	Waiting       []bool
 }
 
 // ------------------------------------------------------------------------------------
@@ -261,13 +271,15 @@ func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink
 // ------------------------------------------------------------------------------------
 
 func (module *DIMEX_Module) startSnapshot(snapshotId int) {
-	// cria o snapshot (salva os estados atuais do modulo)
+	// cria o snapshot, salva em snapshots e envia para todos os outros processos
 	snapshot := Snapshot{
 		Type:          "snapshot",
 		Id:            snapshotId,
+		IdProcess:     module.id,
 		State:         module.st,
 		Waiting:       module.waiting,
-		ChannelStates: make(map[int]Snapshot),
+		SnapshotSaved: false,
+		ChannelStates: make(map[int]SnapshotResponse),
 	}
 	module.snapshots = append(module.snapshots, snapshot)
 
@@ -280,29 +292,53 @@ func (module *DIMEX_Module) startSnapshot(snapshotId int) {
 }
 
 func (module *DIMEX_Module) handleSnapshot(receivedSnapshot string) {
+	existSnapshot := false
 	snapshot := stringToSnapshot(receivedSnapshot)
 
-	// se o snapshot já foi salvo
-	for i, existingSnapshot := range module.snapshots {
-		if existingSnapshot.Id == snapshot.Id {
-			// se o ChannelStates já tem o estado do processo
-			if _, ok := existingSnapshot.ChannelStates[snapshot.Id]; ok {
-				return
-			}
-
-			// atualiza o ChannelStates do snapshot com o snapshot recebido
-			module.snapshots[i].ChannelStates[snapshot.Id] = snapshot
-
-			// se todos os snapshots foram recebidos, salva o snapshot no arquivo
-			if len(module.snapshots[i].ChannelStates) == len(module.addresses) - 1 {
-				saveSnapshotToFile(module.snapshots[i], module.snapshotFile)
-			}
-			return
-		}
+	snapshotResponse := SnapshotResponse{
+		Type:      "snapshotResponse",
+		Id:        snapshot.Id,
+		IdProcess: module.id,
+		State:     module.st,
+		Waiting:   module.waiting,
 	}
 
-	// se o snapshot ainda não foi salvo, salva o estado e o snapshot
-	module.startSnapshot(snapshot.Id)
+	// percorre a lista de snapshots já salvos do módulo
+	for i, existingSnapshot := range module.snapshots {
+		// snapshot já existe
+		if (existingSnapshot.Id == snapshot.Id) {
+			// snapshot já existe e quem salvou foi o outro processo
+			if (existingSnapshot.IdProcess != module.id) {
+				// adiciona o estado desse atual processo em ChannelStates do snapshot
+				snapshot.ChannelStates[module.id] = snapshotResponse
+			}
+
+			// atualiza snapshot
+			module.snapshots[i] = snapshot
+
+			// se o snapshot não foi salvo e já tem os estados de todos os processos, salva o snapshot e escreve no arquivo
+			if (!snapshot.SnapshotSaved) && (len(snapshot.ChannelStates) == 2) {
+				snapshot.SnapshotSaved = true
+				module.snapshots[i] = snapshot
+				saveSnapshotToFile(snapshot, module.snapshotFile)
+			}
+			existSnapshot = true
+			break
+		}
+	}
+	
+	// se o snapshot não existe, já salva o estado desse processo em ChannelStates e adiciona novo snapshot na lista de snapshots do módulo
+	if (!existSnapshot) {
+		snapshot.ChannelStates[module.id] = snapshotResponse
+		module.snapshots = append(module.snapshots, snapshot)
+
+		// envia o snapshot atualizado para todos os outros processos
+		for i := range module.addresses {
+			if (i != module.id) {
+				module.sendToLink(module.addresses[i], snapshotToString(snapshot), fmt.Sprintf("P%d: ", module.id))
+			}
+		}
+	}
 }
 
 // ------------------------------------------------------------------------------------
