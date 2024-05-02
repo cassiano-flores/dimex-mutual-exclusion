@@ -53,9 +53,14 @@ func main() {
 
 	id, _ := strconv.Atoi(os.Args[1])
 	addresses := os.Args[2:]
-	// fmt.Print("id: ", id, "   ") fmt.Println(addresses)
 
-	var dmx *DIMEX.DIMEX_Module = DIMEX.NewDIMEX(addresses, id, true)
+	snapshotFile, snapshotErr := os.OpenFile("./Snapshot/snapshots.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
+	if (snapshotErr != nil) {
+		fmt.Println("Error opening file: ", snapshotErr)
+		return
+	}
+
+	var dmx *DIMEX.DIMEX_Module = DIMEX.NewDIMEX(addresses, id, true, snapshotFile)
 	fmt.Println(dmx)
 
 	startedSnapshots := false
@@ -68,13 +73,6 @@ func main() {
 	}
 	defer file.Close() // garante que o arquivo esta fechado no final da funcao
 
-	fileSnapshot, err := os.OpenFile("./snapshots.txt", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
-	if (err != nil) {
-		fmt.Println("Error opening file: ", err)
-		return
-	}
-	defer file.Close()
-
 	// espera para facilitar inicializacao de todos processos (a mao)
 	time.Sleep(3 * time.Second)
 
@@ -83,22 +81,9 @@ func main() {
 		// Inicia as goroutines na primeira iteração do loop
 		if (!startedSnapshots) {
 			go func() {
-				i := 0
 				for {
-					dmx.SnapshotReq <- i
+					dmx.Req <- DIMEX.SNAPSHOT
 					time.Sleep(2 * time.Second)
-					i++
-				}
-			}()
-
-			go func() {
-				i := 0
-				for {
-					dmx.GetSnapshotReq <- i
-					snapshot := <-dmx.GetSnapshotResp
-					time.Sleep(3 * time.Second)
-					DIMEX.SaveSnapshotToFile(snapshot, fileSnapshot)
-					i++
 				}
 			}()
 

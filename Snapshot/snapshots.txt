@@ -1,0 +1,14 @@
+
+{"Type":"snapshot","Id":0,"State":0,"Waiting":[false,false,false]}
+
+{"Type":"snapshot","Id":1,"State":1,"Waiting":[false,false,false]}
+
+{"Type":"snapshot","Id":2,"State":1,"Waiting":[true,true,false]}
+
+{"Type":"snapshot","Id":3,"State":2,"Waiting":[true,true,false]}
+
+{"Type":"snapshot","Id":4,"State":1,"Waiting":[false,false,false]}
+
+{"Type":"snapshot","Id":5,"State":1,"Waiting":[false,false,false]}
+}
+{"Type":"snapshot","Id":6,"State":1,"Waiting":[false,false,false]}

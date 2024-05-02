@@ -24,7 +24,6 @@ package DIMEX
 import (
 	PP2PLink "SD/PP2PLink"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -45,6 +44,7 @@ type dmxReq int // enumeracao dos estados possiveis de um processo
 const (
 	ENTER dmxReq = iota
 	EXIT
+	SNAPSHOT
 )
 
 type dmxResp struct { // mensagem do modulo DIMEX informando que pode acessar - pode ser somente um sinal (vazio)
@@ -52,23 +52,20 @@ type dmxResp struct { // mensagem do modulo DIMEX informando que pode acessar - 
 }
 
 type DIMEX_Module struct {
-	Req                chan dmxReq      // canal para receber pedidos da aplicacao (ENTER e EXIT)
-	Ind                chan dmxResp     // canal para informar aplicacao que pode acessar
+	Req                chan dmxReq          // canal para receber pedidos da aplicacao (ENTER e EXIT)
+	Ind                chan dmxResp         // canal para informar aplicacao que pode acessar
 
-	SnapshotReq        chan int         // canal para pedir um snapshot
-	GetSnapshotReq     chan int         // canal para recuperar um snapshot
-	GetSnapshotResp    chan Snapshot    // canal para responder com um snapshot
-
-	unreceivedMessages []string     	  // mensagens que ainda nao foram entregues
-	addresses          []string         // endereco de todos, na mesma ordem
-	id                 int              // identificador do processo - eh o indice no array de enderecos acima
-	st                 State            // estado deste processo na exclusao mutua distribuida
-	waiting            []bool           // processos aguardando tem flag true
-	lcl                int              // relogio logico local
-	reqTs              int              // timestamp local da ultima requisicao deste processo
-	nbrResps           int              // contador de respostas
-	dbg                bool             // flag para depuracao
-	snapshots          map[int]Snapshot // snapshots do modulo
+	// unconfirmedMessages []string     	  // mensagens que ainda nao foram entregues
+	addresses           []string        // endereco de todos, na mesma ordem
+	id                  int             // identificador do processo - eh o indice no array de enderecos acima
+	st                  State           // estado deste processo na exclusao mutua distribuida
+	waiting             []bool          // processos aguardando tem flag true
+	lcl                 int             // relogio logico local
+	reqTs               int             // timestamp local da ultima requisicao deste processo
+	nbrResps            int             // contador de respostas
+	dbg                 bool            // flag para depuracao
+	snapshots           []Snapshot      // snapshots do modulo
+	snapshotFile        *os.File
 
 	Pp2plink *PP2PLink.PP2PLink // acesso a comunicacao pra enviar por PP2PLinq.Req e receber por PP2PLinq.Ind
 }
@@ -78,28 +75,22 @@ type Snapshot struct {
 	Id            int
 	State         State
 	Waiting       []bool
-	Lcl           int
-	ReqTs         int
-	NbrResps      int
-	ChannelStates map[int][]string
+	ChannelStates map[int]Snapshot
 }
 
 // ------------------------------------------------------------------------------------
 // ------- inicializacao
 // ------------------------------------------------------------------------------------
 
-func NewDIMEX(_addresses []string, _id int, _dbg bool) *DIMEX_Module {
+func NewDIMEX(_addresses []string, _id int, _dbg bool, snapshotFile *os.File) *DIMEX_Module {
 
 	p2p := PP2PLink.NewPP2PLink(_addresses[_id], _dbg)
 
 	dmx := &DIMEX_Module{
 		Req:             make(chan dmxReq, 1),
 		Ind:             make(chan dmxResp, 1),
-		SnapshotReq:     make(chan int),
-		GetSnapshotReq:  make(chan int),
-		GetSnapshotResp: make(chan Snapshot),
 
-		unreceivedMessages: []string{}, 
+		// unconfirmedMessages: []string{}, 
 		addresses:          _addresses,
 		id:                 _id,
 		st:                 noMX,
@@ -108,7 +99,8 @@ func NewDIMEX(_addresses []string, _id int, _dbg bool) *DIMEX_Module {
 		reqTs:              0,
 		nbrResps:           0,
 		dbg:                _dbg,
-		snapshots:          make(map[int]Snapshot),
+		snapshots:          make([]Snapshot, 0),
+		snapshotFile:       snapshotFile,
 
 		Pp2plink: p2p}
 
@@ -126,6 +118,7 @@ func NewDIMEX(_addresses []string, _id int, _dbg bool) *DIMEX_Module {
 // ------------------------------------------------------------------------------------
 
 func (module *DIMEX_Module) Start() {
+	i := 0
 	go func() {
 		for {
 			select {
@@ -137,10 +130,14 @@ func (module *DIMEX_Module) Start() {
 					} else if (dmxR == EXIT) {
 						module.outDbg("app libera mx")
 						module.handleUponReqExit() // ENTRADA DO ALGORITMO
+
+					} else if (dmxR == SNAPSHOT) {
+						module.outDbg("app pede snapshot")
+						module.startSnapshot(i) // ENTRADA DO ALGORITMO
+						i++
 					}
 
 				case msgOutro := <-module.Pp2plink.Ind: // vindo de outro processo
-					// fmt.Printf("dimex recebe da rede: ", msgOutro.Message)
 					if (strings.Contains(msgOutro.Message, "respOk")) {
 						module.outDbg("         <<<---- responde! " + msgOutro.Message)
 						module.handleUponDeliverRespOk(msgOutro) // ENTRADA DO ALGORITMO
@@ -153,21 +150,6 @@ func (module *DIMEX_Module) Start() {
   		      module.outDbg("          <<<---- snapshot recebido !!! ")
       		  module.handleSnapshot(msgOutro.Message) // ENTRADA DO ALGORITMO
     			}
-
-				///////////////////////////////////////////////////////////////////////////////////
-				case snapshotId := <-module.SnapshotReq: // vindo da aplicacao
-					module.outDbg("app pede snapshot")
-					module.startSnapshot(snapshotId)
-
-				case getSnapshotId := <-module.GetSnapshotReq: // vindo da aplicacao
-					module.outDbg("app responde snapshot")
-					snapshot, err := module.getSnapshot(getSnapshotId)
-					
-					if (err != nil) {
-						fmt.Println("Error getting snapshot:", err)
-					} else {
-						module.GetSnapshotResp <- snapshot
-					}
 			}
 		}
 	}()
@@ -238,7 +220,7 @@ func (module *DIMEX_Module) handleUponDeliverRespOk(msgOutro PP2PLink.PP2PLink_I
 
 	if (module.nbrResps == (len(module.addresses) - 1)) {
 		module.Ind <- dmxResp{}
-		module.unreceivedMessages = removeMessage(module.unreceivedMessages, msgOutro.Message)
+		// module.unconfirmedMessages = removeMessage(module.unconfirmedMessages, msgOutro.Message)
 		module.st = inMX
 	}
 }
@@ -285,11 +267,10 @@ func (module *DIMEX_Module) startSnapshot(snapshotId int) {
 		Id:            snapshotId,
 		State:         module.st,
 		Waiting:       module.waiting,
-		Lcl:           module.lcl,
-		ReqTs:         module.reqTs,
-		NbrResps:      module.nbrResps,
-		ChannelStates: make(map[int][]string),
+		ChannelStates: make(map[int]Snapshot),
 	}
+	module.snapshots = append(module.snapshots, snapshot)
+
 	// envia para todos os outros processos
 	for i := range module.addresses {
 		if (i != module.id) {
@@ -301,27 +282,27 @@ func (module *DIMEX_Module) startSnapshot(snapshotId int) {
 func (module *DIMEX_Module) handleSnapshot(receivedSnapshot string) {
 	snapshot := stringToSnapshot(receivedSnapshot)
 
-	// se o snapshot ainda não foi salvo
-	if _, ok := module.snapshots[snapshot.Id]; !ok {
-		module.snapshots[snapshot.Id] = snapshot
-
-		// enviar para todos os outros processos
-		for i := range module.addresses {
-			if (i != module.id) {
-				module.sendToLink(module.addresses[i], snapshotToString(snapshot), fmt.Sprintf("P%d: ", module.id))
+	// se o snapshot já foi salvo
+	for i, existingSnapshot := range module.snapshots {
+		if existingSnapshot.Id == snapshot.Id {
+			// se o ChannelStates já tem o estado do processo
+			if _, ok := existingSnapshot.ChannelStates[snapshot.Id]; ok {
+				return
 			}
+
+			// atualiza o ChannelStates do snapshot com o snapshot recebido
+			module.snapshots[i].ChannelStates[snapshot.Id] = snapshot
+
+			// se todos os snapshots foram recebidos, salva o snapshot no arquivo
+			if len(module.snapshots[i].ChannelStates) == len(module.addresses) - 1 {
+				saveSnapshotToFile(module.snapshots[i], module.snapshotFile)
+			}
+			return
 		}
 	}
-	// salva o estado do canal, com as mensagens não recebidas
-	module.snapshots[snapshot.Id].ChannelStates[module.id] = append([]string{}, module.unreceivedMessages...)
-}
 
-func (module *DIMEX_Module) getSnapshot(snapshotId int) (Snapshot, error) {
-	if snapshot, ok := module.snapshots[snapshotId]; ok {
-		return snapshot, nil
-	} else {
-		return Snapshot{}, errors.New("Snapshot not found")
-	}
+	// se o snapshot ainda não foi salvo, salva o estado e o snapshot
+	module.startSnapshot(snapshot.Id)
 }
 
 // ------------------------------------------------------------------------------------
@@ -333,7 +314,7 @@ func (module *DIMEX_Module) sendToLink(address string, content string, space str
 	module.Pp2plink.Req <- PP2PLink.PP2PLink_Req_Message{
 		To:      address,
 		Message: content}
-	module.unreceivedMessages = append(module.unreceivedMessages, content)
+	// module.unconfirmedMessages = append(module.unconfirmedMessages, content)
 }
 
 func before(oneId, oneTs, othId, othTs int) bool {
@@ -372,16 +353,16 @@ func stringToSnapshot(receivedSnapshot string) Snapshot {
 	return snapshot
 }
 
-func removeMessage(slice []string, message string) []string {
+/* func removeMessage(slice []string, message string) []string {
 	for i, item := range slice {
 		if (item == message) {
 			return append(slice[:i], slice[i+1:]...)
 		}
 	}
 	return slice
-}
+} */
 
-func SaveSnapshotToFile(snapshot Snapshot, file *os.File) {
+func saveSnapshotToFile(snapshot Snapshot, file *os.File) {
 	snapshotString := snapshotToString(snapshot)
 
 	// escreve o snapshot no arquivo
