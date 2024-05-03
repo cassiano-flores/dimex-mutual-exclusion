@@ -26,12 +26,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 )
 
 // ------------------------------------------------------------------------------------
 // ------- principais tipos
 // ------------------------------------------------------------------------------------
+
+var snapshots []Snapshot // array global para armazenar snapshots
 
 type State int // enumeracao dos estados possiveis de um processo
 const (
@@ -128,6 +132,16 @@ func NewDIMEX(_addresses []string, _id int, _dbg bool, snapshotFile *os.File) *D
 // ------------------------------------------------------------------------------------
 
 func (module *DIMEX_Module) Start() {
+	// configura o manipulador de sinal para capturar o sinal de interrupção
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+    <-c
+    // quando o sinal de interrupção é recebido, escreve o array global no arquivo
+    saveSnapshotsToFile(snapshots, module.snapshotFile)
+    os.Exit(1)
+	}()
+
 	i := 0
 	go func() {
 		for {
@@ -293,7 +307,7 @@ func (module *DIMEX_Module) startSnapshot(snapshotId int) {
 
 func (module *DIMEX_Module) handleSnapshot(receivedSnapshot string) {
 	existSnapshot := false
-	snapshot := stringToSnapshot(receivedSnapshot)
+	snapshot      := StringToSnapshot(receivedSnapshot)
 
 	snapshotResponse := SnapshotResponse{
 		Type:      "snapshotResponse",
@@ -320,7 +334,7 @@ func (module *DIMEX_Module) handleSnapshot(receivedSnapshot string) {
 			if (!snapshot.SnapshotSaved) && (len(snapshot.ChannelStates) == 2) {
 				snapshot.SnapshotSaved = true
 				module.snapshots[i] = snapshot
-				saveSnapshotToFile(snapshot, module.snapshotFile)
+				snapshots = append(snapshots, snapshot)
 			}
 			existSnapshot = true
 			break
@@ -378,7 +392,7 @@ func snapshotToString(snapshot Snapshot) string {
 	return string(snapshotJson)
 }
 
-func stringToSnapshot(receivedSnapshot string) Snapshot {
+func StringToSnapshot(receivedSnapshot string) Snapshot {
 	var snapshot Snapshot
 
 	// deserializa a string JSON de volta em um objeto snapshot
@@ -398,13 +412,15 @@ func stringToSnapshot(receivedSnapshot string) Snapshot {
 	return slice
 } */
 
-func saveSnapshotToFile(snapshot Snapshot, file *os.File) {
-	snapshotString := snapshotToString(snapshot)
-
-	// escreve o snapshot no arquivo
-	_, err := file.WriteString("\n" + snapshotString + "\n")
-	if (err != nil) {
-		fmt.Println("Error writing file: ", err)
-		return
+func saveSnapshotsToFile(snapshots []Snapshot, file *os.File) {
+	for _, snapshot := range snapshots {
+		snapshotString := snapshotToString(snapshot)
+		
+		// escreve o snapshot no arquivo
+		_, err := file.WriteString(snapshotString + "\n")
+		if (err != nil) {
+			fmt.Println("Error writing file: ", err)
+			return
+		}
 	}
 }

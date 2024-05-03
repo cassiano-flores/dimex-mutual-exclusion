@@ -82,6 +82,9 @@ func main() {
 		if (!startedSnapshots) {
 			go func() {
 				for {
+					if (!startedSnapshots) {
+						time.Sleep(5 * time.Second)
+					}
 					dmx.Req <- DIMEX.SNAPSHOT
 					time.Sleep(2 * time.Second)
 				}
