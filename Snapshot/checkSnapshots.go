@@ -1,54 +1,93 @@
 package main
 
 import (
-	"encoding/json"
+	"SD/DIMEX"
+	"bufio"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Snapshot struct {
-	Type          string            `json:"Type"`
-	Id            int               `json:"Id"`
-	State         int               `json:"State"`
-	Waiting       []bool            `json:"Waiting"`
-	ChannelStates map[int][]string  `json:"ChannelStates"`
+	Type          string                   `json:"Type"`
+	Id            int                      `json:"Id"`
+	IdProcess     int							         `json:"IdProcess"`
+	State         int                      `json:"State"`
+	Waiting       []bool                   `json:"Waiting"`
+	SnapshotSaved bool							       `json:"SnapshotSaved"`
+	ChannelStates map[int]SnapshotResponse `json:"ChannelStates"`
+}
+
+type SnapshotResponse struct {
+	Type          string `json:"Type"`
+	Id            int    `json:"Id"`
+	IdProcess     int    `json:"IdProcess"`
+	State         int    `json:"State"`
+	Waiting       []bool `json:"Waiting"`
 }
 
 // conta o número de processos na seção crítica (SC)
-func inv1(snapshot Snapshot) bool {
+func inv1(snapshot DIMEX.Snapshot) bool {
 	count := 0
-	for _, state := range snapshot.ChannelStates {
-		for _, s := range state {
-			if s == "SC" {
-				count++
-			}
-		}
+	
+	if (snapshot.State == 2) {  // 2 = inMX
+		count++
 	}
-	// Retorna verdadeiro se no máximo um processo está na SC
+
+	for _, state := range snapshot.ChannelStates {
+    if (state.State == 2) {
+			count++
+    }
+	}
+
 	return count <= 1
 }
 
 func main() {
-    // Lê o arquivo snapshots.txt
-    data, err := os.ReadFile("snapshots.txt")
-    if err != nil {
-        fmt.Println("File reading error", err)
-        return
-    }
+	// abre o arquivo snapshots.txt
+	file, err := os.Open("snapshots.txt")
+	if (err != nil) {
+		fmt.Println("File opening error", err)
+		return
+	}
+	defer file.Close()
 
-    // Parseia o conteúdo do arquivo para um slice de Snapshots
-    var snapshots []Snapshot
-    err = json.Unmarshal(data, &snapshots)
-    if err != nil {
-        fmt.Println("Error parsing JSON", err)
-        return
-    }
+	scanner := bufio.NewScanner(file)
+	var line string
+	var count int
+	var snapshotString string
 
-    // Para cada snapshot, verifica as invariantes
-    for _, snapshot := range snapshots {
-        if !inv1(snapshot) {
-            fmt.Printf("Invariant 1 violated in snapshot %d\n", snapshot.Id)
-        }
-        // Adicione aqui chamadas para outras funções de verificação de invariantes
-    }
+	// lê o arquivo linha por linha
+	for scanner.Scan() {
+		line = scanner.Text()
+		count += strings.Count(line, "}")
+		snapshotString += line
+
+		// a cada quarta "}", envia a string lida
+		if (count == 4) {
+			snapshot := DIMEX.StringToSnapshot(snapshotString)
+			//////////////////////////////////////////////////////////////////
+			// verifica as invariantes
+			if !inv1(snapshot) {
+				fmt.Printf("Invariant 1 violated in snapshot %d\n", snapshot.Id)
+			}
+		/* 
+				if (!inv2(snapshot)) {
+					fmt.Printf("Invariant 2 violated in snapshot %d\n", snapshot.Id)
+				}
+				if (!inv3(snapshot)) {
+					fmt.Printf("Invariant 3 violated in snapshot %d\n", snapshot.Id)
+				}
+				if (!inv4(snapshot)) {
+					fmt.Printf("Invariant 4 violated in snapshot %d\n", snapshot.Id)
+				}
+		*/
+			count = 0
+			snapshotString = ""
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Println("File reading error", err)
+	}
 }
