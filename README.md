@@ -1,4 +1,4 @@
-Para rodar os processos, em um terminal Powershell no diretório raiz, execute o comando **.\script.ps1**
+Em um terminal Powershell no diretório raiz, execute o comando **.\script.ps1** para rodar os processos. Após finalizar, para testar as invariantes, basta ir ao diretório **.\Snapshot** e executar o comando **go run .\checkSnapshots.go**
 
 **1° parte**
 

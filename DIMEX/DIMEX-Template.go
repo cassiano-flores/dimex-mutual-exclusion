@@ -75,21 +75,23 @@ type DIMEX_Module struct {
 }
 
 type Snapshot struct {
-	Type          string
-	Id            int
-	IdProcess     int
-	State         State
-	Waiting       []bool
-	SnapshotSaved bool
-	ChannelStates map[int]SnapshotResponse
+	Type             string
+	Id               int
+	IdProcess        int
+	State            State
+	Waiting          []bool
+	SnapshotSaved    bool
+	ChannelStates    map[int]SnapshotResponse
+	ReceivedMessages []string
+	SentMessages     []string
 }
 
 type SnapshotResponse struct {
-	Type          string
-	Id            int
-	IdProcess     int
-	State         State
-	Waiting       []bool
+	Type      string
+	Id        int
+	IdProcess int
+	State     State
+	Waiting   []bool
 }
 
 // ------------------------------------------------------------------------------------
@@ -240,11 +242,13 @@ func (module *DIMEX_Module) handleUponDeliverRespOk(msgOutro PP2PLink.PP2PLink_I
 			entao trigger [ dmx, Deliver | free2Access ]        - ENVIA MENSAGEM DE LIBERACAO
 			estado := estouNaSC                                 - ATUALIZA ESTADO PARA estouNaSC
 */
+	if len(module.snapshots) > 0 && !strings.Contains(msgOutro.Message, "snapshot") {
+		module.snapshots[len(module.snapshots)-1].ReceivedMessages = append(module.snapshots[len(module.snapshots)-1].ReceivedMessages, msgOutro.Message)
+	}
 	module.nbrResps++
 
 	if (module.nbrResps == (len(module.addresses) - 1)) {
 		module.Ind <- dmxResp{}
-		// module.unconfirmedMessages = removeMessage(module.unconfirmedMessages, msgOutro.Message)
 		module.st = inMX
 	}
 }
@@ -287,13 +291,15 @@ func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink
 func (module *DIMEX_Module) startSnapshot(snapshotId int) {
 	// cria o snapshot, salva em snapshots e envia para todos os outros processos
 	snapshot := Snapshot{
-		Type:          "snapshot",
-		Id:            snapshotId,
-		IdProcess:     module.id,
-		State:         module.st,
-		Waiting:       module.waiting,
-		SnapshotSaved: false,
-		ChannelStates: make(map[int]SnapshotResponse),
+		Type:             "snapshot",
+		Id:               snapshotId,
+		IdProcess:        module.id,
+		State:            module.st,
+		Waiting:          module.waiting,
+		SnapshotSaved:    false,
+		ChannelStates:    make(map[int]SnapshotResponse),
+		ReceivedMessages: []string{},
+		SentMessages:     []string{},
 	}
 	module.snapshots = append(module.snapshots, snapshot)
 
@@ -310,11 +316,11 @@ func (module *DIMEX_Module) handleSnapshot(receivedSnapshot string) {
 	snapshot      := StringToSnapshot(receivedSnapshot)
 
 	snapshotResponse := SnapshotResponse{
-		Type:      "snapshotResponse",
-		Id:        snapshot.Id,
-		IdProcess: module.id,
-		State:     module.st,
-		Waiting:   module.waiting,
+		Type:             "snapshotResponse",
+		Id:               snapshot.Id,
+		IdProcess:        module.id,
+		State:            module.st,
+		Waiting:          module.waiting,
 	}
 
 	// percorre a lista de snapshots já salvos do módulo
@@ -360,11 +366,15 @@ func (module *DIMEX_Module) handleSnapshot(receivedSnapshot string) {
 // ------------------------------------------------------------------------------------
 
 func (module *DIMEX_Module) sendToLink(address string, content string, space string) {
+	// adiciona a mensagem enviada ao snapshot atual
+	if len(module.snapshots) > 0 && !strings.Contains(content, "snapshot") {
+		module.snapshots[len(module.snapshots)-1].SentMessages = append(module.snapshots[len(module.snapshots)-1].SentMessages, content)
+	}
+
 	module.outDbg(space + " ---->>>>   to: " + address + "     msg: " + content)
 	module.Pp2plink.Req <- PP2PLink.PP2PLink_Req_Message{
 		To:      address,
 		Message: content}
-	// module.unconfirmedMessages = append(module.unconfirmedMessages, content)
 }
 
 func before(oneId, oneTs, othId, othTs int) bool {
@@ -402,15 +412,6 @@ func StringToSnapshot(receivedSnapshot string) Snapshot {
 	}
 	return snapshot
 }
-
-/* func removeMessage(slice []string, message string) []string {
-	for i, item := range slice {
-		if (item == message) {
-			return append(slice[:i], slice[i+1:]...)
-		}
-	}
-	return slice
-} */
 
 func saveSnapshotsToFile(snapshots []Snapshot, file *os.File) {
 	for _, snapshot := range snapshots {
